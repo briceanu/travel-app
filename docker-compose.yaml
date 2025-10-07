@@ -1,0 +1,56 @@
+services:
+  redis:
+    container_name: redis-container
+    image: redis
+    ports:
+      - 6379:6379
+    restart: always
+  postgres:
+    container_name: postgres-container-travel
+    image: postgres
+
+    ports:
+      - 5433:5432
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: ${POSTGRES_HOST}
+    restart: unless-stopped
+
+  celery:
+    container_name: celery-tasks
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    command: "celery -A app.utils.celery_tasks worker --loglevel=INFO"
+    volumes:
+      - .:/app
+    depends_on:
+      - redis
+      - postgres
+    environment:
+      DB_URL: postgres+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/1
+  fastapi:
+    container_name: fastapi-app
+    build:
+      context: .
+      dockerfile: Dockerfile
+
+    volumes:
+      - .:/app
+    ports:
+      - 8000:8000
+    depends_on:
+      - postgres
+    environment:
+      DB_URL: postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@${POSTGRES_HOST}:${POSTGRES_PORT}/${POSTGRES_DB}
+    command: >
+      sh -c "alembic upgrade head && alembic revision --autogenerate -m 'first migration' && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    restart: unless-stopped
+volumes:
+  postgres-data:
