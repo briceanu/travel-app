@@ -1,5 +1,6 @@
-from app.utils.user_logic import get_current_active_user
-from fastapi import APIRouter, status, HTTPException, Depends, Header, Form, UploadFile
+import uuid
+from app.utils.user_logic import get_current_active_user, get_current_user
+from fastapi import APIRouter, status, HTTPException, Depends, Header, Form, Query
 from app.repositories.user_repository import UserRepository
 from app.services.user_service import UserService
 from app.schemas import user_schemas
@@ -509,7 +510,11 @@ async def delete_user_profile_picture(
         )
 
 
-@router.get("/profile", status_code=status.HTTP_200_OK, response_model=user_schemas.UserProfileSchemaOut)
+@router.get(
+    "/profile",
+    status_code=status.HTTP_200_OK,
+    response_model=user_schemas.UserProfileSchemaOut,
+)
 async def get_user_profile(
     user_profile: Annotated[User, Security(get_current_active_user, scopes=["user"])],
     async_session: Annotated[AsyncSession, Depends(get_async_db)],
@@ -548,8 +553,8 @@ async def get_user_profile(
 
 @router.get("/profile-image", status_code=status.HTTP_200_OK)
 async def get_user_profile_image(
-        user: Annotated[User, Security(get_current_active_user, scopes=["user"])],
-        async_session: Annotated[AsyncSession, Depends(get_async_db)],
+    user: Annotated[User, Security(get_current_active_user, scopes=["user"])],
+    async_session: Annotated[AsyncSession, Depends(get_async_db)],
 ) -> StreamingResponse:
     """
     Retrieve and stream the authenticated user's profile image from the S3 bucket.
@@ -575,8 +580,7 @@ async def get_user_profile_image(
     """
 
     try:
-        repo = UserRepository(user=user,
-                              async_session=async_session)
+        repo = UserRepository(user=user, async_session=async_session)
         service = UserService(repo)
         return await service.fetch_user_profile_image()
     except HTTPException:
@@ -588,10 +592,14 @@ async def get_user_profile_image(
         )
 
 
-@router.patch("/deactivate", status_code=status.HTTP_200_OK, response_model=user_schemas.DeactivateAccountSchemaOut)
+@router.patch(
+    "/deactivate",
+    status_code=status.HTTP_200_OK,
+    response_model=user_schemas.DeactivateAccountSchemaOut,
+)
 async def deactivate_account(
-        user: Annotated[User, Security(get_current_active_user, scopes=["user"])],
-        async_session: Annotated[AsyncSession, Depends(get_async_db)],
+    user: Annotated[User, Security(get_current_active_user, scopes=["user"])],
+    async_session: Annotated[AsyncSession, Depends(get_async_db)],
 ) -> user_schemas.DeactivateAccountSchemaOut:
     """
     Deactivate the currently authenticated user's account.
@@ -619,8 +627,7 @@ async def deactivate_account(
     """
 
     try:
-        repo = UserRepository(user=user,
-                              async_session=async_session)
+        repo = UserRepository(user=user, async_session=async_session)
         service = UserService(repo)
         return await service.deactivate_account()
     except HTTPException:
@@ -632,10 +639,14 @@ async def deactivate_account(
         )
 
 
-@router.patch("/reactivate", status_code=status.HTTP_200_OK, response_model=user_schemas.ReactivateAccountScheamaOut)
+@router.patch(
+    "/reactivate",
+    status_code=status.HTTP_200_OK,
+    response_model=user_schemas.ReactivateAccountScheamaOut,
+)
 async def reactivate_account(
-        user: Annotated[User, Security(get_current_active_user, scopes=["user"])],
-        async_session: Annotated[AsyncSession, Depends(get_async_db)],
+    user: Annotated[User, Security(get_current_user, scopes=["user"])],
+    async_session: Annotated[AsyncSession, Depends(get_async_db)],
 ) -> user_schemas.ReactivateAccountScheamaOut:
     """
     Reactivate the authenticated user's account.
@@ -659,8 +670,7 @@ async def reactivate_account(
     """
 
     try:
-        repo = UserRepository(user=user,
-                              async_session=async_session)
+        repo = UserRepository(user=user, async_session=async_session)
         service = UserService(repo)
         return await service.reactivate_account()
     except HTTPException:
@@ -669,4 +679,96 @@ async def reactivate_account(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"an error occured: {str(e)}",
+        )
+
+
+@router.post(
+    "/register",
+    status_code=status.HTTP_200_OK,
+    response_model=user_schemas.RegisterForTripSchemaOut,
+)
+async def enroll_in_trip(
+    user: Annotated[User, Security(get_current_active_user, scopes=["user"])],
+    async_session: Annotated[AsyncSession, Depends(get_async_db)],
+    trip_id: Annotated[uuid.UUID, Query()],
+) -> user_schemas.RegisterForTripSchemaOut:
+    """
+    Enroll the currently authenticated user in a specific trip.
+
+    This endpoint allows a user with the `user` scope to register for a trip
+    identified by `trip_id`. It ensures that the user is not already enrolled
+    and commits the enrollment in the database.
+
+    Args:
+        user (User): The currently authenticated user, injected via security dependency.
+        async_session (AsyncSession): The asynchronous database session dependency.
+        trip_id (uuid.UUID): The ID of the trip the user wants to enroll in.
+
+    Returns:
+        user_schemas.RegisterForTripSchemaOut: A schema containing a success message
+        confirming the user has been enrolled in the trip.
+
+    Raises:
+        HTTPException (400): If the user is already enrolled in the trip.
+        HTTPException (404): If no trip with the specified `trip_id` exists.
+        HTTPException (500): If an unexpected error occurs during the enrollment process.
+    """
+
+    try:
+        repo = UserRepository(
+            user=user, async_session=async_session, trip_id=trip_id)
+        service = UserService(repo)
+        return await service.join_trip()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"an error occured: {str(e)}",
+        )
+
+
+@router.delete(
+    "/unregister",
+    status_code=status.HTTP_200_OK,
+    response_model=user_schemas.UnRegisterForTripSchemaOut,
+)
+async def leave_trip(
+    user: Annotated[User, Security(get_current_active_user, scopes=["user"])],
+    async_session: Annotated[AsyncSession, Depends(get_async_db)],
+    trip_id: Annotated[uuid.UUID, Query()],
+) -> user_schemas.UnRegisterForTripSchemaOut:
+    """
+    Unregister the currently authenticated user from a specific trip.
+
+    This endpoint allows a user with the `user` scope to leave (unregister from)
+    a trip identified by `trip_id`. It ensures that the user is currently
+    enrolled in the trip and removes their enrollment record from the database.
+
+    Args:
+        user (User): The currently authenticated user, injected via security dependency.
+        async_session (AsyncSession): The asynchronous database session dependency.
+        trip_id (uuid.UUID): The ID of the trip the user wants to leave.
+
+    Returns:
+        user_schemas.RegisterForTripSchemaOut: A schema containing a success message
+        confirming that the user has successfully left the trip.
+
+    Raises:
+        HTTPException (400): If the user is not enrolled in the trip.
+        HTTPException (404): If no trip with the specified `trip_id` exists.
+        HTTPException (500): If an unexpected error occurs during the unregistration process.
+    """
+
+    try:
+        repo = UserRepository(
+            user=user, async_session=async_session, trip_id=trip_id)
+        service = UserService(repo)
+        return await service.leave_trip()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred: {str(e)}",
         )

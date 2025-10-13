@@ -62,3 +62,11 @@ class AbstractUserInterface(ABC):
     @abstractmethod
     def reactivate_user_account(self) -> None:
         pass
+
+    @abstractmethod
+    def register_for_trip(self) -> None:
+        pass
+
+    @abstractmethod
+    def unregister_from_trip(self) -> None:
+        pass

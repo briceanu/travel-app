@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from app.interfaces.user_interface import AbstractUserInterface
 from app.schemas import user_schemas
 from sqlalchemy.ext.asyncio import AsyncSession
-from app.models.app_models import User
+from app.models.app_models import User, Trip
 from sqlalchemy import insert, select, update
 from pwdlib import PasswordHash
 from app.utils.celery_tasks import send_welcome_email
@@ -17,14 +17,13 @@ from jwt.exceptions import InvalidTokenError, ExpiredSignatureError
 from app.utils import user_logic
 from datetime import datetime, timezone
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy.orm import load_only
+from sqlalchemy.orm import load_only, selectinload
 from app.utils.celery_tasks import s3_upload
 from app.utils.boto3_client import s3_presigned_url, s3_delete, s3_get_object
 from fastapi.responses import StreamingResponse
-import httpx
 from fastapi.exceptions import HTTPException
 from botocore.exceptions import ClientError, NoCredentialsError
-
+import uuid
 
 load_dotenv()
 REFRESH_SECRET = os.getenv("REFRESH_SECRET")
@@ -73,6 +72,7 @@ class UserRepository(AbstractUserInterface):
     ) = None
     user_profile_picture: user_schemas.UpdateProfilePictureSchemaIn | None = None
     user_profile: User | None = None
+    trip_id: uuid.UUID | None = None
 
     async def create_user(self) -> user_schemas.UserSchemaOut:
         """
@@ -537,6 +537,8 @@ class UserRepository(AbstractUserInterface):
         """
         try:
             key = str(self.user.user_id)
+            file_extension = self.user_profile_picture.picture.filename.split(
+                '.')[-1]
             # check to see if the user has already a url picture in db
             # if it has we delete it
             if self.user.profile_picture:
@@ -545,13 +547,15 @@ class UserRepository(AbstractUserInterface):
             # proceed to upload the images to s3
             file_content = await self.user_profile_picture.picture.read()
             s3_upload.delay(
-                content_type="image/png",
+                content_type=f"image/{file_extension}",
                 body=file_content,
                 key=key,
                 bucket=BUCKET_NAME,
             )
             # save the url image string in db
-            profile_picture_url = f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
+            profile_picture_url = (
+                f"https://{BUCKET_NAME}.s3.{AWS_REGION}.amazonaws.com/{key}"
+            )
 
             stmt = (
                 update(User)
@@ -658,25 +662,26 @@ class UserRepository(AbstractUserInterface):
             email=self.user_profile.email,
             is_active=self.user_profile.is_active,
             date_of_birth=self.user_profile.date_of_birth,
-            profile_picture=presigned_url
+            profile_picture=presigned_url,
+            scopes=self.user_profile.scopes,
         )
 
     async def get_user_profile_image(self) -> StreamingResponse:
         """
-    Retrieve the user's profile image from the S3 bucket and stream it back as a response.
+        Retrieve the user's profile image from the S3 bucket and stream it back as a response.
 
-    This method:
-        - Checks if the user has an existing profile picture in the database.
-        - Fetches the corresponding image object from the configured S3 bucket using the user's ID as the key.
-        - Streams the image file back to the client as a `StreamingResponse`.
+        This method:
+            - Checks if the user has an existing profile picture in the database.
+            - Fetches the corresponding image object from the configured S3 bucket using the user's ID as the key.
+            - Streams the image file back to the client as a `StreamingResponse`.
 
-    Raises:
-        HTTPException:
-            - 400 if the user does not have a profile picture set.
-            - 500 if there is an error retrieving the image from S3.
+        Raises:
+            HTTPException:
+                - 400 if the user does not have a profile picture set.
+                - 500 if there is an error retrieving the image from S3.
 
-    Returns:
-        StreamingResponse: A streaming response containing the user's profile image file.
+        Returns:
+            StreamingResponse: A streaming response containing the user's profile image file.
         """
 
         if not self.user.profile_picture:
@@ -711,18 +716,26 @@ class UserRepository(AbstractUserInterface):
         if not self.user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Your account is already inactive."
+                detail="Your account is already inactive.",
             )
-        stmt = update(User).where(User.user_id ==
-                                  self.user.user_id).values(is_active=False).returning(User.username)
-        username_response = (await self.async_session.execute(stmt)).scalar_one_or_none()
+        stmt = (
+            update(User)
+            .where(User.user_id == self.user.user_id)
+            .values(is_active=False)
+            .returning(User.username)
+        )
+        username_response = (
+            await self.async_session.execute(stmt)
+        ).scalar_one_or_none()
         if not username_response:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Could not deactivate account.",
             )
         await self.async_session.commit()
-        return user_schemas.DeactivateAccountSchemaOut(success='your account has been successfully deactivated.')
+        return user_schemas.DeactivateAccountSchemaOut(
+            success="your account has been successfully deactivated."
+        )
 
     async def reactivate_user_account(self) -> user_schemas.ReactivateAccountScheamaOut:
         """
@@ -744,15 +757,112 @@ class UserRepository(AbstractUserInterface):
         if self.user.is_active:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Your account is already active."
+                detail="Your account is already active.",
             )
-        stmt = update(User).where(User.user_id ==
-                                  self.user.user_id).values(is_active=True).returning(User.username)
-        username_response = (await self.async_session.execute(stmt)).scalar_one_or_none()
+        stmt = (
+            update(User)
+            .where(User.user_id == self.user.user_id)
+            .values(is_active=True)
+            .returning(User.username)
+        )
+        username_response = (
+            await self.async_session.execute(stmt)
+        ).scalar_one_or_none()
         if not username_response:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail="Could not deactivate account.",
             )
         await self.async_session.commit()
-        return user_schemas.ReactivateAccountScheamaOut(success='your account has been successfully reactivated.')
+        return user_schemas.ReactivateAccountScheamaOut(
+            success="your account has been successfully reactivated."
+        )
+
+    async def register_for_trip(self) -> user_schemas.RegisterForTripSchemaOut:
+        """
+        Enroll the current user in a specific trip.
+
+        This method adds the user to the `participants` list of the trip identified
+        by `self.trip_id`. It ensures the user is attached to the current session
+        and prevents duplicate enrollments.
+
+        Returns:
+            user_schemas.RegisterForTripSchemaOut: A schema containing a success message
+            confirming that the user has been enrolled in the trip.
+
+        Raises:
+            HTTPException (404): If no trip with the specified `trip_id` exists.
+            HTTPException (400): If the user is already enrolled in the trip.
+            HTTPException (500): If an unexpected error occurs during the database operation.
+        """
+        trip = (
+            await self.async_session.execute(
+                select(Trip)
+                .options(selectinload(Trip.participants))
+                .where(Trip.trip_id == self.trip_id)
+            )
+        ).scalar_one_or_none()
+
+        if not trip:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No trip with id {self.trip_id} found.",
+            )
+        user = await self.async_session.merge(self.user)
+        if user in trip.participants:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{user.username} is already enrolled in this trip.",
+            )
+
+        trip.participants.append(user)
+        await self.async_session.commit()
+        return user_schemas.RegisterForTripSchemaOut(
+            success=f"Congradulations {self.user.username} you enlisted in trip."
+        )
+
+    async def unregister_from_trip(self) -> user_schemas.UnRegisterForTripSchemaOut:
+        """
+        Unregisters the current user from a specific trip.
+
+        This method removes the association between the authenticated user
+        and the target trip by updating the many-to-many relationship table.
+        It ensures that the trip exists and that the user is currently
+        enrolled before proceeding with the unregistration.
+
+        Returns:
+            user_schemas.UnRegisterForTripSchemaOut: A response schema containing
+            a success message confirming that the user has successfully left
+            the trip.
+
+        Raises:
+            HTTPException (404): If no trip with the specified `trip_id` exists.
+            HTTPException (400): If the user is not enrolled in the specified trip.
+            HTTPException (500): If an unexpected database or session error occurs.
+        """
+
+        trip = (
+            await self.async_session.execute(
+                select(Trip)
+                .options(selectinload(Trip.participants))
+                .where(Trip.trip_id == self.trip_id)
+            )
+        ).scalar_one_or_none()
+
+        if not trip:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"No trip with id {self.trip_id} found.",
+            )
+        user = await self.async_session.merge(self.user)
+        if not user in trip.participants:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"{user.username} is not enrolled in this trip.",
+            )
+
+        trip.participants.remove(user)
+        await self.async_session.commit()
+        return user_schemas.RegisterForTripSchemaOut(
+            success=f"{self.user.username}, your trip enrollment has been canceled successfully."
+        )

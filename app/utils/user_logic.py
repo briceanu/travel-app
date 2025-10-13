@@ -184,7 +184,7 @@ async def get_current_user(
     return user_in_db
 
 
-def get_current_active_user(user: Annotated[User,  Security(get_current_user, scopes=['user', 'admin', 'planner'])]):
+def get_current_active_user(user: Annotated[User,  Security(get_current_user, scopes=['user'])]):
     """
     Ensures the currently authenticated user is active.
 
@@ -205,6 +205,56 @@ def get_current_active_user(user: Annotated[User,  Security(get_current_user, sc
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive user")
     return user
+
+
+def get_current_active_planner(planner: Annotated[User,  Security(get_current_user, scopes=['planner'])]):
+    """
+    Ensure that the currently authenticated planner is active.
+
+    This dependency is used in FastAPI routes that require the user to have
+    the 'planner' scope and an active account. If the planner is inactive,
+    it raises an HTTP 400 error.
+
+    Args:
+        planner (User): The authenticated planner user, provided by the
+            `get_current_user` dependency after scope validation.
+
+    Returns:
+        User: The currently active planner user.
+
+    Raises:
+        HTTPException: If the planner account is inactive (HTTP 400).
+    """
+
+    if not planner.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive planner.")
+    return planner
+
+
+def get_current_active_admin(admin: Annotated[User, Security(get_current_user, scopes=['admin'])]):
+    """
+    Validate and return the currently authenticated active admin user.
+
+    This dependency checks that the user obtained via `get_current_user`:
+        1. Has the 'admin' scope.
+        2. Is marked as active in the database.
+
+    Args:
+        admin (User): The currently authenticated user injected by FastAPI
+            via the Security dependency.
+
+    Returns:
+        User: The authenticated and active admin user.
+
+    Raises:
+        HTTPException (400): If the user is inactive.
+    """
+
+    if not admin.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Inactive planner.")
+    return admin
 
 
 def black_list_token(jti: str, ttl: int) -> None:

@@ -258,3 +258,29 @@ class UserService:
             HTTPException 404: If the account could not be found or updated.
         """
         return await self.repository.reactivate_user_account()
+
+    async def join_trip(self):
+        """
+        Registers the current user for a trip.
+
+        This method calls the repository's `register_for_trip` function to
+        handle the actual registration logic asynchronously.
+
+        Returns:
+            Any: The result returned by `repository.register_for_trip()`,
+            typically a confirmation of registration or trip details.
+        """
+        return await self.repository.register_for_trip()
+
+    async def leave_trip(self):
+        """
+        Unregisters the current user from a trip.
+
+        This method calls the repository's `unregister_from_trip` function to
+        handle the process of leaving the trip asynchronously.
+
+        Returns:
+            Any: The result returned by `repository.unregister_from_trip()`,
+            typically a confirmation message or updated trip details.
+        """
+        return await self.repository.unregister_from_trip()

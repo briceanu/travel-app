@@ -27,6 +27,8 @@ def validate_password(value):
 
 class UserAccountEnum(str, Enum):
     user = "user"
+    planner = 'planner'
+    admin = 'admin'
 
 
 class UserSchemaIn(BaseModel):
@@ -238,6 +240,7 @@ class UserProfileSchemaOut(BaseModel):
     is_active: bool
     date_of_birth: date | None
     profile_picture: str | None
+    scopes: list[str]
 
 
 class ReactivateAccountScheamaOut(BaseModel):
@@ -245,6 +248,14 @@ class ReactivateAccountScheamaOut(BaseModel):
 
 
 class DeactivateAccountSchemaOut(BaseModel):
+    success: str
+
+
+class RegisterForTripSchemaOut(BaseModel):
+    success: str
+
+
+class UnRegisterForTripSchemaOut(BaseModel):
     success: str
 
     # planner user admin

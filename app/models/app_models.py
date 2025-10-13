@@ -1,8 +1,9 @@
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs
-from sqlalchemy import DateTime, MetaData, String, Date, Integer, Numeric, JSON, Column, Table, ForeignKey
-from datetime import datetime, date
+from sqlalchemy import DateTime, Time, MetaData, Interval, String, Date, Integer, Numeric, JSON, Column, Table, ForeignKey
+from datetime import datetime, date, time, timedelta
 import uuid
+from decimal import Decimal
 
 
 class Base(DeclarativeBase, AsyncAttrs):
@@ -40,7 +41,7 @@ class User(Base):
         String(200), nullable=True, default=None)
     scopes: Mapped[list[str]] = mapped_column(JSON, default=[], nullable=False)
     trips: Mapped[list['Trip']] = relationship(
-        back_populates='participants', secondary='user_trip_association_course', cascade='all,delete')
+        back_populates='participants', secondary='user_trip_association_course', cascade='all')
 
 
 class Trip(Base):
@@ -62,7 +63,7 @@ class Trip(Base):
         back_populates='trips', secondary='user_trip_association_course'
     )
     destinations: Mapped[list['Destination']] = relationship(
-        back_populates='trip', cascade='all, delete'
+        back_populates='trip', cascade='all, delete-orphan'
     )
 
 
@@ -80,11 +81,10 @@ class Destination(Base):
         String(100), nullable=False)
     images: Mapped[list[str]] = mapped_column(JSON, default=[], nullable=False)
     trip_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey(Trip.trip_id), nullable=False)
-
+        ForeignKey(Trip.trip_id, ondelete='CASCADE', onupdate='CASCADE'), nullable=False)
     trip: Mapped['Trip'] = relationship(back_populates='destinations')
     activities: Mapped[list['Activity']] = relationship(
-        back_populates='destination', cascade='all, delete'
+        back_populates='destination', cascade='all, delete-orphan'
     )
 
 
@@ -96,12 +96,14 @@ class Activity(Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     description: Mapped[str] = mapped_column(String(300), nullable=False)
-    start_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    end_time: Mapped[datetime] = mapped_column(DateTime, nullable=False)
-    duration: Mapped[int] = mapped_column(Integer, nullable=False)
-    price: Mapped[float] = mapped_column(Numeric(6, 2), nullable=False)
+    start_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False)
+    end_time: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False)
+    duration: Mapped[timedelta] = mapped_column(Interval, nullable=False)
+    price: Mapped[Decimal] = mapped_column(Numeric(6, 2), nullable=False)
     destination_id: Mapped[uuid.UUID] = mapped_column(
-        ForeignKey(Destination.destination_id), nullable=False)
+        ForeignKey(Destination.destination_id, ondelete='CASCADE', onupdate='CASCADE'), nullable=False)
 
     destination: Mapped['Destination'] = relationship(
         back_populates='activities')
@@ -110,8 +112,10 @@ class Activity(Base):
 user_trip_association_course = Table(
     'user_trip_association_course',
     Base.metadata,
-    Column('user_id', ForeignKey(User.user_id), primary_key=True),
-    Column('trip_id', ForeignKey(Trip.trip_id), primary_key=True)
+    Column('user_id', ForeignKey(User.user_id, ondelete='CASCADE',
+           onupdate='CASCADE'), primary_key=True),
+    Column('trip_id', ForeignKey(Trip.trip_id, ondelete='CASCADE',
+           onupdate='CASCADE'), primary_key=True)
 
 )
 
