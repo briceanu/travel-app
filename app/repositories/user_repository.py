@@ -24,6 +24,7 @@ from fastapi.responses import StreamingResponse
 from fastapi.exceptions import HTTPException
 from botocore.exceptions import ClientError, NoCredentialsError
 import uuid
+from app.utils.logger import logger
 
 load_dotenv()
 REFRESH_SECRET = os.getenv("REFRESH_SECRET")
@@ -850,6 +851,7 @@ class UserRepository(AbstractUserInterface):
         ).scalar_one_or_none()
 
         if not trip:
+            logger.warning(f'No trip with id {self.trip_id} found.')
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"No trip with id {self.trip_id} found.",

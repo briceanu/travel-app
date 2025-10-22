@@ -125,7 +125,7 @@ class TripSchemaOut(BaseModel):
     end_date: date
     duration: str
     estimated_budget: Decimal
-    destinations: list[DestinationSchemaOut]
+    destinations: list[DestinationSchemaOut] = []
     participants: list[ParticipantsSchemaOut] = []
 
 
@@ -185,3 +185,45 @@ class DestinationSchemaIn(BaseModel):
 
 class TripReomveSchemaOut(BaseModel):
     success: str
+
+
+class ActivitiesByDestinationSchemaOut(BaseModel):
+    destination: uuid.UUID
+    nr_of_activities: int
+
+
+class ActivitiesByTripSchemaOut(BaseModel):
+    trip: uuid.UUID
+    nr_of_activities: int
+
+
+class TotalCostOfActivitiesOut(BaseModel):
+    destination_id: uuid.UUID
+    total_sum: Decimal
+
+
+class MostExpensiveActivityPerDestination(BaseModel):
+    destination_id: uuid.UUID
+    max_price: Decimal
+
+
+class UsersInTripsWithExpnsiveActivities(BaseModel):
+    username: str
+
+
+class TripByPopularitySchemaOut(BaseModel):
+    trip_id: uuid.UUID
+    title: str
+    participants: int
+
+
+class DestinationWithMostActivities(BaseModel):
+    dest_id: uuid.UUID
+    dest_name: str
+    nr_of_activities: int
+
+
+class AvreagePriceOfActivitiesInEachDestinationOut(BaseModel):
+    dest_id: uuid.UUID
+    destination_name: str
+    average_price: Decimal

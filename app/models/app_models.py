@@ -1,7 +1,7 @@
 from sqlalchemy.orm import DeclarativeBase, mapped_column, Mapped, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs
-from sqlalchemy import DateTime, Time, MetaData, Interval, String, Date, Integer, Numeric, JSON, Column, Table, ForeignKey
-from datetime import datetime, date, time, timedelta
+from sqlalchemy import DateTime, MetaData, Interval, String, Date, Integer, Numeric, JSON, Column, Table, ForeignKey
+from datetime import datetime, date, timedelta
 import uuid
 from decimal import Decimal
 

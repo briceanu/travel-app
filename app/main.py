@@ -1,11 +1,39 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, status, Response
 from app.routes.user_routes import router as user_router
 from app.routes.planner_routes import router as planner_router
 from app.routes.admin_routes import router as admin_router
 from fastapi.middleware.cors import CORSMiddleware
+from app.utils.logger import logger
+import time
+from pyinstrument import Profiler
 
 
 app = FastAPI()
+
+
+@app.middleware('http')
+async def check_profile(request: Request, call_next):
+    profiler = Profiler()
+    profiler.start()
+    response = await call_next(request)
+    profiler.stop()
+    logger.info(profiler.output_text(unicode=True, color=True))
+    return response
+
+
+@app.middleware('http')
+async def total_end_point_execution(request: Request, call_next):
+    start_time = time.perf_counter()
+    response = await call_next(request)
+    total_s = time.perf_counter() - start_time
+    total_ms = total_s * 1000
+    color = "\033[92m" if total_ms < 200 else "\033[93m" if total_ms < 1000 else "\033[91m"
+    logger.info(
+        f"{color}[ENDPOINT EXECUTION TIME: {total_ms:.2f} ms]{'\033[0m'} "
+        f"{request.method} {request.url.path}"
+    )
+    return response
+
 
 app.add_middleware(
     CORSMiddleware,
