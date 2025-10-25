@@ -15,7 +15,6 @@ from jwt.exceptions import InvalidTokenError
 from pydantic import ValidationError
 from app.schemas import user_schemas
 import redis
-from sqlalchemy.orm import load_only
 
 load_dotenv()
 
@@ -28,6 +27,7 @@ redis_client = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=3)
 REFRESH_SECRET = os.getenv("REFRESH_SECRET")
 SECRET = os.getenv("SECRET")
 ALGORITHM = os.getenv("ALGORITHM")
+
 
 password_hash = PasswordHash.recommended()
 

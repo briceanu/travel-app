@@ -21,6 +21,8 @@ from sqlalchemy.orm import aliased, load_only
 from datetime import time, datetime
 from sqlalchemy import Time, desc
 from decimal import Decimal
+import redis
+import json
 
 load_dotenv()
 
@@ -28,6 +30,10 @@ REFRESH_SECRET = os.getenv("REFRESH_SECRET")
 ALGORITHM = os.getenv("ALGORITHM")
 BUCKET_NAME = os.getenv("BUCKET_NAME")
 AWS_REGION = os.getenv("AWS_REGION")
+REDIS_HOST = os.getenv("REDIS_HOST")
+REDIS_PORT = os.getenv("REDIS_PORT")
+
+redis_client_cache = redis.Redis(host=REDIS_HOST, port=REDIS_PORT, db=4)
 
 
 @dataclass
@@ -445,7 +451,8 @@ class PlannerRepository(AbstractPlannerInterface):
 
     async def all_users_enlisted_in_a_specific_trip(
         self,
-    ) -> list[planner_schemas.ParticipantsSchemaOut]:
+        # ) -> list[planner_schemas.ParticipantsSchemaOut]:
+    ):
         """
         Retrieve all users (participants) enlisted in a specific trip.
 
@@ -462,7 +469,6 @@ class PlannerRepository(AbstractPlannerInterface):
         Raises:
             HTTPException (404): If no trip with the given `trip_id` exists.
         """
-
         trip_id = (
             await self.async_session.execute(
                 select(Trip.trip_id).where(Trip.trip_id == self.trip_id)
@@ -474,6 +480,22 @@ class PlannerRepository(AbstractPlannerInterface):
                 detail=f"no trip with id {self.trip_id} found.",
             )
 
+        cache_trip_key = f"cache_trip_id:{self.trip_id}"
+        cache_trip = redis_client_cache.get(cache_trip_key)
+        # if data in redis we return it
+        if cache_trip:
+            logger.info("data retrived from redis")
+            participants_data = json.loads(cache_trip)
+            return [
+                planner_schemas.ParticipantsSchemaOut(
+                    user_id=participant["user_id"],
+                    username=participant["username"],
+                    date_of_birth=participant["date_of_birth"],
+                    email=participant["email"],
+                    phone_number=participant["phone_number"],
+                )
+                for participant in participants_data
+            ]
         participants = (
             (
                 await self.async_session.execute(
@@ -490,6 +512,23 @@ class PlannerRepository(AbstractPlannerInterface):
             .all()
         )
 
+        participants_data = [
+            {
+                "user_id": str(p.user_id),
+                "username": p.username,
+                "date_of_birth": p.date_of_birth,
+                "email": p.email,
+                "phone_number": p.phone_number,
+            }
+            for p in participants
+        ]
+
+        # # Save JSON string to Redis
+        participants_json = json.dumps(participants_data)
+        redis_client_cache.set(cache_trip_key, participants_json, ex=20)
+        logger.info("Data retrieved from DB ")
+
+        # Return Pydantic models for FastAPI response
         return [
             planner_schemas.ParticipantsSchemaOut(
                 user_id=participant.user_id,
@@ -1287,3 +1326,47 @@ class PlannerRepository(AbstractPlannerInterface):
             for dest_id, destination_name, average_price in result
         ]
         return average_price_list
+
+
+#  cache_trip_id = f'cache_trip_id:{self.trip_id}'
+#         cach_trip = redis_client_cache.get(cache_trip_id)
+#         if cach_trip:
+#             return
+
+#         trip_id = (
+#             await self.async_session.execute(
+#                 select(Trip.trip_id).where(Trip.trip_id == self.trip_id)
+#             )
+#         ).scalar_one_or_none()
+#         if not trip_id:
+#             raise HTTPException(
+#                 status_code=status.HTTP_404_NOT_FOUND,
+#                 detail=f"no trip with id {self.trip_id} found.",
+#             )
+
+#         participants = (
+#             (
+#                 await self.async_session.execute(
+#                     select(User)
+#                     .join(
+#                         user_trip_association_course,
+#                         User.user_id == user_trip_association_course.c.user_id,
+#                     )
+#                     .join(Trip, self.trip_id == user_trip_association_course.c.trip_id)
+#                 )
+#             )
+#             .unique()
+#             .scalars()
+#             .all()
+#         )
+
+#         return [
+#             planner_schemas.ParticipantsSchemaOut(
+#                 user_id=participant.user_id,
+#                 username=participant.username,
+#                 date_of_birth=participant.date_of_birth,
+#                 email=participant.email,
+#                 phone_number=participant.phone_number,
+#             )
+#             for participant in participants
+#         ]

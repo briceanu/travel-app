@@ -5,7 +5,6 @@ from dotenv import load_dotenv
 import asyncio
 import os
 import boto3
-from fastapi import status
 
 
 load_dotenv()
