@@ -1,13 +1,12 @@
-from app.models.app_models import *
-from app.models.app_models import Base
-from app.db.db_connection import DB_URL
 import asyncio
 from logging.config import fileConfig
 
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
-
+from app.models.app_models import Base
+from app.models.app_models import *
+from app.db.db_connection import DB_URL
 from alembic import context
 
 # this is the Alembic Config object, which provides
@@ -19,12 +18,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option('sqlalchemy.url', DB_URL)
 # add your model's MetaData object here
 # for 'autogenerate' support
 # from myapp import mymodel
 # target_metadata = mymodel.Base.metadata
 target_metadata = Base.metadata
+config.set_main_option('sqlalchemy.url', DB_URL)
 
 # other values from the config, defined by the needs of env.py,
 # can be acquired:

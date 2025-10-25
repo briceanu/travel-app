@@ -99,6 +99,7 @@ class ParticipantsSchemaOut(BaseModel):
     date_of_birth: date | None
     email: EmailStr
     phone_number: str | None
+    model_config = ConfigDict(from_attributes=True)
 
 
 class DestinationSchemaOut(BaseModel):

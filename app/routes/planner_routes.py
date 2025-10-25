@@ -1,7 +1,7 @@
 from fastapi.routing import APIRouter
 from typing import Annotated
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends, Security, status, File, Query
+from fastapi import Depends, Security, status, File, Query, Request
 from app.db.db_connection import get_async_db
 from app.models.app_models import User
 from fastapi.exceptions import HTTPException
@@ -14,7 +14,7 @@ import uuid
 from pydantic import Field
 from datetime import date, time, datetime
 from decimal import Decimal
-
+from app.utils.rate_limiter import limiter
 
 router = APIRouter(tags=["planner routes"], prefix="/v1/planner")
 
@@ -273,14 +273,15 @@ async def get_all_activities(
 @router.get(
     "/all-users-enlisted-in-trip",
     status_code=status.HTTP_200_OK,
-    response_model=list[planner_schemas.ParticipantsSchemaOut],
+    # response_model=list[planner_schemas.ParticipantsSchemaOut],
 )
 async def get_all_destinations(
     async_session: Annotated[AsyncSession, Depends(get_async_db)],
     _: Annotated[User, Security(get_current_active_planner, scopes=["planner"])],
     trip_id: Annotated[uuid.UUID, Query()],
     # ) -> list[planner_schemas.TripSchemaOut]:
-) -> list[planner_schemas.ParticipantsSchemaOut]:
+    # ) -> list[planner_schemas.ParticipantsSchemaOut]:
+):
     """
     Retrieve all users (participants) enlisted in a specific trip.
 
@@ -955,13 +956,14 @@ async def get_users_in_trips_with_expensive_activities(
     status_code=status.HTTP_200_OK,
     response_model=list[planner_schemas.TripSchemaOut]
 )
-async def get_most_expensive_trips(
-    async_session: Annotated[AsyncSession, Depends(get_async_db)],
-    _: Annotated[User, Security(get_current_active_planner, scopes=["planner"])],
-    number_of_trips: Annotated[
+@limiter.limit("2/minute")
+async def get_most_expensive_trips(request: Request,
+                                   async_session: Annotated[AsyncSession, Depends(get_async_db)],
+                                   _: Annotated[User, Security(get_current_active_planner, scopes=["planner"])],
+                                   number_of_trips: Annotated[
         int,
         Query(description="Number of trips", ge=1),
-    ] = 1,
+                                   ] = 1,
 ) -> list[planner_schemas.TripSchemaOut]:
     """
     Retrieve the most expensive trips based on their estimated budget.
