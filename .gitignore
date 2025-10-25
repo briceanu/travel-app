@@ -4,3 +4,4 @@ travel_env
 .ruff_cache
 client.html
 app.log
+profile.html
